@@ -72,6 +72,7 @@ class RAGPipeline:
 
             if not force_reload and self.store.load():
                 _cb("Vector store loaded from cache.")
+                self.embedder._load_model()
             else:
                 _cb("Loading & chunking documents…")
                 chunks = load_all_chunks(force=force_reload)
@@ -86,7 +87,7 @@ class RAGPipeline:
 
             api_key = os.getenv("GROQ_API_KEY", "")
             if api_key and api_key != "your_groq_api_key_here":
-                self.client = Groq(api_key=api_key, http_client=httpx.Client())
+                self.client = Groq(api_key=api_key, http_client=httpx.Client(timeout=30.0))
                 _cb("Groq client initialised.")
             else:
                 self.client = None
@@ -198,7 +199,9 @@ class RAGPipeline:
             response = self.client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=1024,
+                max_tokens=512,
+                temperature=0.2,
+                top_p=0.95,
             )
             return response.choices[0].message.content
         except Exception as e:

@@ -108,7 +108,7 @@ def get_pipeline():
 # ── sidebar ──────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚙️ Settings")
-    top_k    = st.slider("Top-K chunks", 1, 10, 5)
+    top_k    = st.slider("Top-K chunks", 1, 10, 3)
     template = st.selectbox("Prompt template", ["balanced", "strict", "cot", "adversarial"])
     st.markdown("---")
     st.markdown("### 📊 Pipeline Info")
