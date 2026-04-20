@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.py[cod]
+*.pyo
+.DS_Store
+data/election_chunks.json
+data/budget_chunks.json
+data/budget_2025.pdf
+embeddings/embeddings_cache.npy
+embeddings/embeddings_meta.json
+retrieval/faiss.index
+retrieval/store_meta.json
+logs/memory.json
+logs/pipeline_log.jsonl
+*.egg-info/
+.venv/
+venv/
