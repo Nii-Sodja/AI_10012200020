@@ -2,9 +2,7 @@
 data/data_loader.py  — Part A: Data Engineering & Preparation
 Student: [Your Name] | Index: [Your Index Number]
 """
-import os, re, json, logging, requests
-import pandas as pd
-import pdfplumber
+import os, re, json, logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -64,11 +62,13 @@ def load_election_chunks(force: bool = False) -> list:
 
     logger.info("Downloading election CSV…")
     try:
+        import pandas as pd
         df = pd.read_csv(ELECTION_CSV_URL)
     except Exception as e:
         logger.warning(f"Download failed ({e}), trying local copy.")
         local = os.path.join(DATA_DIR, "Ghana_Election_Result.csv")
         if os.path.exists(local):
+            import pandas as pd
             df = pd.read_csv(local)
         else:
             logger.error("No election data available.")
@@ -144,6 +144,7 @@ def load_budget_chunks(force: bool = False) -> list:
     if not os.path.exists(local_pdf):
         logger.info("Downloading budget PDF…")
         try:
+            import requests
             r = requests.get(BUDGET_PDF_URL, timeout=90, stream=True,
                              headers={"User-Agent": "Mozilla/5.0"})
             r.raise_for_status()
@@ -160,6 +161,7 @@ def load_budget_chunks(force: bool = False) -> list:
 
     chunks = []
     try:
+        import pdfplumber
         with pdfplumber.open(local_pdf) as pdf:
             full = ""
             for pg in pdf.pages:

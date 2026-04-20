@@ -9,9 +9,6 @@ import os, sys, json, logging, time
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from data.data_loader    import load_all_chunks
-from embeddings.embedder  import Embedder
-from retrieval.vector_store import VectorStore
 from pipeline.prompt_engine import construct_prompt, list_templates
 
 import httpx
@@ -64,6 +61,10 @@ class RAGPipeline:
 
         try:
             _cb("Loading embedding model…")
+            from data.data_loader import load_all_chunks
+            from embeddings.embedder import Embedder
+            from retrieval.vector_store import VectorStore
+
             self.embedder = Embedder()
 
             _cb("Checking vector store…")

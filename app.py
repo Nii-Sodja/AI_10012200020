@@ -9,10 +9,13 @@ import os, sys, json, time, logging
 sys.path.insert(0, os.path.dirname(__file__))
 
 import streamlit as st
-import plotly.graph_objects as go
-import plotly.express as px
 
-from pipeline.rag_pipeline import RAGPipeline
+
+# ── singleton pipeline ───────────────────────────────────────────────────────
+@st.cache_resource(show_spinner=False)
+def get_pipeline():
+    from pipeline.rag_pipeline import RAGPipeline
+    return RAGPipeline(top_k=5, template="balanced")
 
 # ── page config ──────────────────────────────────────────────────────
 st.set_page_config(
@@ -251,6 +254,8 @@ with tabs[1]:
     k_val = st.slider("Retrieve top-k", 3, 15, 8, key="inspect_k")
 
     if st.button("Run Inspection") and pipe.is_ready:
+        import plotly.graph_objects as go
+
         vec = pipe.embedder.embed_query(inspect_query)
 
         col_a, col_b, col_c = st.columns(3)

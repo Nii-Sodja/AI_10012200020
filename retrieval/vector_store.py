@@ -12,13 +12,21 @@ Implements:
 """
 import os, json, logging, re
 import numpy as np
-import faiss
-from rank_bm25 import BM25Okapi
 
 logger = logging.getLogger(__name__)
 STORE_DIR = os.path.dirname(__file__)
 FAISS_IDX = os.path.join(STORE_DIR, "faiss.index")
 META_JSON  = os.path.join(STORE_DIR, "store_meta.json")
+
+
+def _get_faiss():
+    import faiss
+    return faiss
+
+
+def _get_bm25():
+    from rank_bm25 import BM25Okapi
+    return BM25Okapi
 
 # ── query expansion synonyms (domain-specific) ──────────────────────
 EXPANSION_MAP = {
@@ -61,18 +69,21 @@ class VectorStore:
         self.sources = sources
 
         # FAISS — inner product (works as cosine because vectors are L2-normalised)
+        faiss = _get_faiss()
         self.index = faiss.IndexFlatIP(self.dim)
         self.index.add(embeddings)
         logger.info(f"FAISS index built: {self.index.ntotal} vectors, dim={self.dim}")
 
         # BM25 — tokenised word corpus
         tokenised = [t.lower().split() for t in texts]
-        self.bm25 = BM25Okapi(tokenised)
+        bm25_cls = _get_bm25()
+        self.bm25 = bm25_cls(tokenised)
         logger.info("BM25 index built.")
 
         self._save()
 
     def _save(self):
+        faiss = _get_faiss()
         faiss.write_index(self.index, FAISS_IDX)
         with open(META_JSON, "w") as f:
             json.dump({"texts": self.texts, "sources": self.sources}, f)
@@ -80,13 +91,15 @@ class VectorStore:
 
     def load(self) -> bool:
         if os.path.exists(FAISS_IDX) and os.path.exists(META_JSON):
+            faiss = _get_faiss()
             self.index = faiss.read_index(FAISS_IDX)
             with open(META_JSON) as f:
                 meta = json.load(f)
             self.texts   = meta["texts"]
             self.sources = meta["sources"]
             tokenised    = [t.lower().split() for t in self.texts]
-            self.bm25    = BM25Okapi(tokenised)
+            bm25_cls     = _get_bm25()
+            self.bm25    = bm25_cls(tokenised)
             logger.info(f"VectorStore loaded: {self.index.ntotal} vectors.")
             return True
         return False
