@@ -11,12 +11,6 @@ sys.path.insert(0, os.path.dirname(__file__))
 import streamlit as st
 
 
-# ── singleton pipeline ───────────────────────────────────────────────────────
-@st.cache_resource(show_spinner=False)
-def get_pipeline():
-    from pipeline.rag_pipeline import RAGPipeline
-    return RAGPipeline(top_k=5, template="balanced")
-
 # ── page config ──────────────────────────────────────────────────────
 st.set_page_config(
     page_title="GovIntel AI",
@@ -103,10 +97,12 @@ html, body, [class*="css"] { font-family: 'Space Grotesk', sans-serif; }
 
 
 # ── singleton pipeline ───────────────────────────────────────────────
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(show_spinner="⏳ Loading AI pipeline… (first load only)")
 def get_pipeline():
     from pipeline.rag_pipeline import RAGPipeline
-    return RAGPipeline(top_k=5, template="balanced")
+    pipe = RAGPipeline(top_k=5, template="balanced")
+    pipe.initialise()
+    return pipe
 
 
 # ── sidebar ──────────────────────────────────────────────────────────
@@ -120,19 +116,6 @@ with st.sidebar:
     pipe = get_pipeline()
     pipe.top_k    = top_k
     pipe.template = template
-
-    if not pipe.is_ready:
-        with st.spinner("Initialising RAG pipeline…"):
-            status_placeholder = st.empty()
-            msgs = []
-            def cb(msg):
-                msgs.append(msg)
-                status_placeholder.info("\n".join(msgs[-3:]))
-            result = pipe.initialise(progress_cb=cb)
-        if result.get("status") == "ok":
-            status_placeholder.success("✅ Pipeline ready!")
-        else:
-            status_placeholder.error(f"Pipeline init failed: {result.get('error', 'unknown')}")
 
     if pipe.is_ready and pipe.store:
         st.metric("Index size", f"{pipe.store.index.ntotal:,} chunks")
