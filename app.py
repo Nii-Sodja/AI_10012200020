@@ -19,11 +19,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-params = st.experimental_get_query_params()
-if params:
-    st.experimental_set_query_params()
-    st.experimental_rerun()
-
 # ── custom CSS ───────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -123,6 +118,11 @@ with st.sidebar:
     st.markdown("### 📊 Pipeline Info")
 
     pipe = st.session_state.pipe
+    if pipe is None:
+        with st.spinner("Loading AI pipeline… this can take a few seconds"):
+            st.session_state.pipe = get_pipeline()
+            pipe = st.session_state.pipe
+
     if pipe is not None and pipe.is_ready and pipe.store:
         pipe.top_k    = top_k
         pipe.template = template
@@ -130,16 +130,7 @@ with st.sidebar:
         st.metric("Embedding dim", f"{pipe.embedder.dim}D")
         st.metric("Memory turns", len(pipe.memory))
     else:
-        st.info("AI pipeline is not loaded. Click below to load it when you are ready.")
-
-    if st.button("⚡ Load AI pipeline"):
-        with st.spinner("Loading AI pipeline… this can take a few seconds"):
-            st.session_state.pipe = get_pipeline()
-            pipe = st.session_state.pipe
-            if pipe is not None:
-                pipe.top_k    = top_k
-                pipe.template = template
-        st.experimental_rerun()
+        st.warning("Pipeline is initializing. Please wait a moment.")
 
     if pipe is not None and pipe.is_ready:
         if st.button("🔄 Rebuild Index"):
