@@ -19,6 +19,11 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+params = st.experimental_get_query_params()
+if params:
+    st.experimental_set_query_params()
+    st.experimental_rerun()
+
 # ── custom CSS ───────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -106,29 +111,44 @@ def get_pipeline():
 
 
 # ── sidebar ──────────────────────────────────────────────────────────
+if "pipe" not in st.session_state:
+    st.session_state.pipe = None
+
 with st.sidebar:
     st.markdown("### ⚙️ Settings")
     top_k    = st.slider("Top-K chunks", 1, 10, 3)
     template = st.selectbox("Prompt template", ["balanced", "strict", "cot", "adversarial"])
+    fast_mode = st.checkbox("Fast mode (smaller prompt, faster response)", value=True)
     st.markdown("---")
     st.markdown("### 📊 Pipeline Info")
 
-    pipe = get_pipeline()
-    pipe.top_k    = top_k
-    pipe.template = template
-
-    if pipe.is_ready and pipe.store:
+    pipe = st.session_state.pipe
+    if pipe is not None and pipe.is_ready and pipe.store:
+        pipe.top_k    = top_k
+        pipe.template = template
         st.metric("Index size", f"{pipe.store.index.ntotal:,} chunks")
         st.metric("Embedding dim", f"{pipe.embedder.dim}D")
         st.metric("Memory turns", len(pipe.memory))
+    else:
+        st.info("AI pipeline is not loaded. Click below to load it when you are ready.")
 
-    if st.button("🔄 Rebuild Index"):
-        with st.spinner("Rebuilding…"):
-            pipe.initialise(force_reload=True)
-        st.success("Rebuilt!")
-    if st.button("🧹 Clear Memory"):
-        pipe.clear_memory()
-        st.success("Memory cleared.")
+    if st.button("⚡ Load AI pipeline"):
+        with st.spinner("Loading AI pipeline… this can take a few seconds"):
+            st.session_state.pipe = get_pipeline()
+            pipe = st.session_state.pipe
+            if pipe is not None:
+                pipe.top_k    = top_k
+                pipe.template = template
+        st.experimental_rerun()
+
+    if pipe is not None and pipe.is_ready:
+        if st.button("🔄 Rebuild Index"):
+            with st.spinner("Rebuilding…"):
+                pipe.initialise(force_reload=True)
+            st.success("Rebuilt!")
+        if st.button("🧹 Clear Memory"):
+            pipe.clear_memory()
+            st.success("Memory cleared.")
 
     st.markdown("---")
     st.markdown("### 🔑 API Key")
@@ -140,7 +160,8 @@ with st.sidebar:
         if key_input:
             os.environ["GROQ_API_KEY"] = key_input
             import groq as _grq
-            pipe.client = _grq.Groq(api_key=key_input)
+            if pipe is not None:
+                pipe.client = _grq.Groq(api_key=key_input)
             st.success("Key set!")
 
 
@@ -186,13 +207,13 @@ with tabs[0]:
     pending = st.session_state.pop("pending_query", None)
     user_input = st.chat_input("Ask about Ghana elections or the 2025 budget…") or pending
 
-    if user_input and pipe.is_ready:
+    if user_input and pipe is not None and pipe.is_ready:
         with st.chat_message("user"):
             st.write(user_input)
 
         with st.chat_message("assistant"):
             with st.spinner("🔍 Retrieving context & generating response…"):
-                result = pipe.query(user_input, template=template)
+                result = pipe.query(user_input, template=template, fast_mode=fast_mode)
 
             response = result.get("response", "No response generated.")
             st.markdown(f'<div class="response-box">{response}</div>', unsafe_allow_html=True)
@@ -223,8 +244,8 @@ with tabs[0]:
 
         st.session_state.history.append({"query": user_input, "response": response})
 
-    elif user_input and not pipe.is_ready:
-        st.error("Pipeline not ready. Check sidebar.")
+    elif user_input:
+        st.error("AI pipeline is not loaded yet. Load it from the sidebar before asking a question.")
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -237,7 +258,7 @@ with tabs[1]:
     inspect_query = st.text_input("Inspection query", "What is the GDP growth target in Ghana's 2025 budget?")
     k_val = st.slider("Retrieve top-k", 3, 15, 8, key="inspect_k")
 
-    if st.button("Run Inspection") and pipe.is_ready:
+    if st.button("Run Inspection") and pipe is not None and pipe.is_ready:
         import plotly.graph_objects as go
 
         vec = pipe.embedder.embed_query(inspect_query)
@@ -295,9 +316,9 @@ with tabs[2]:
     selected_type = st.selectbox("Select adversarial query type", list(adversarial_queries.keys()))
     adv_query = st.text_input("Query (editable)", adversarial_queries[selected_type])
 
-    if st.button("Run Adversarial Test") and pipe.is_ready:
+    if st.button("Run Adversarial Test") and pipe is not None and pipe.is_ready:
         with st.spinner("Running comparison…"):
-            rag_result  = pipe.query(adv_query, adversarial_mode=True)
+            rag_result  = pipe.query(adv_query, adversarial_mode=True, fast_mode=fast_mode)
             pure_result = pipe.query_pure_llm(adv_query)
 
         c1, c2 = st.columns(2)

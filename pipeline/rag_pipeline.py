@@ -67,12 +67,11 @@ class RAGPipeline:
 
             self.embedder = Embedder()
 
-            _cb("Checking vector store…")
+            _cb("Initialising pipeline components…")
             self.store = VectorStore(dim=self.embedder.dim)
 
             if not force_reload and self.store.load():
                 _cb("Vector store loaded from cache.")
-                self.embedder._load_model()
             else:
                 _cb("Loading & chunking documents…")
                 chunks = load_all_chunks(force=force_reload)
@@ -108,7 +107,7 @@ class RAGPipeline:
     # ── query ───────────────────────────────────────────────────────
 
     def query(self, user_query: str, template: str = None,
-               adversarial_mode: bool = False) -> dict:
+               adversarial_mode: bool = False, fast_mode: bool = False) -> dict:
         """
         Full pipeline execution for a single query.
         Returns rich dict with every stage's data (for display in UI).
@@ -138,7 +137,8 @@ class RAGPipeline:
 
         # ── Stage 2: Retrieval ──────────────────────────────────────
         logger.info("[S2] Retrieving documents…")
-        retrieval_result = self.store.retrieve(user_query, query_vec, k=self.top_k)
+        retrieve_k = max(1, self.top_k - 1) if fast_mode else self.top_k
+        retrieval_result = self.store.retrieve(user_query, query_vec, k=retrieve_k)
         retrieved = retrieval_result["results"]
         result["stages"]["retrieval"] = {
             "total_in_index":  self.store.index.ntotal,
@@ -158,18 +158,20 @@ class RAGPipeline:
 
         # ── Stage 4: Prompt Construction ───────────────────────────
         logger.info("[S3] Building prompt…")
-        prompt, used_chunks, context_str = construct_prompt(user_query, all_chunks, tmpl)
+        max_chars = 3200 if fast_mode else 6000
+        prompt, used_chunks, context_str = construct_prompt(user_query, all_chunks, tmpl, max_chars=max_chars)
         result["stages"]["prompt"] = {
             "template":      tmpl,
             "prompt_length": len(prompt),
             "chunks_used":   len(used_chunks),
             "final_prompt":  prompt,
+            "fast_mode":     fast_mode,
         }
         logger.info(f"[S3] Prompt ready: {len(prompt)} chars.")
 
         # ── Stage 5: LLM Generation ─────────────────────────────────
         logger.info("[S4] Calling LLM…")
-        response_text = self._call_llm(prompt)
+        response_text = self._call_llm(prompt, fast_mode=fast_mode)
         result["stages"]["generation"] = {
             "response_length": len(response_text),
         }
@@ -192,14 +194,14 @@ class RAGPipeline:
 
     # ── LLM caller ─────────────────────────────────────────────────
 
-    def _call_llm(self, prompt: str) -> str:
+    def _call_llm(self, prompt: str, fast_mode: bool = False) -> str:
         if self.client is None:
             return self._mock_response(prompt)
         try:
             response = self.client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=512,
+                max_tokens=256 if fast_mode else 512,
                 temperature=0.2,
                 top_p=0.95,
             )

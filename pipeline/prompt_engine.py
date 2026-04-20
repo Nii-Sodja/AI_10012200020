@@ -127,7 +127,7 @@ def build_context(chunks: list[dict], max_chars: int = MAX_CONTEXT_CHARS) -> tup
     return context, used
 
 
-def construct_prompt(query: str, chunks: list[dict], template_name: str = "balanced") -> tuple[str, list[dict], str]:
+def construct_prompt(query: str, chunks: list[dict], template_name: str = "balanced", max_chars: int = MAX_CONTEXT_CHARS) -> tuple[str, list[dict], str]:
     """
     Returns: (final_prompt, used_chunks, context_string)
     """
@@ -135,7 +135,7 @@ def construct_prompt(query: str, chunks: list[dict], template_name: str = "balan
         template_name = "balanced"
     template = TEMPLATES[template_name]
 
-    context, used_chunks = build_context(chunks, MAX_CONTEXT_CHARS)
+    context, used_chunks = build_context(chunks, max_chars)
     prompt = template.format(context=context, query=query)
     logger.info(f"Prompt constructed: template={template_name}, length={len(prompt)} chars.")
     return prompt, used_chunks, context
