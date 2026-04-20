@@ -19,17 +19,24 @@ class Embedder:
     """Custom embedding pipeline wrapping sentence-transformers."""
 
     def __init__(self, model_name: str = MODEL_NAME):
-        logger.info(f"Loading embedding model: {model_name}")
-        from sentence_transformers import SentenceTransformer
-        self.model = SentenceTransformer(model_name)
-        self.dim   = self.model.get_sentence_embedding_dimension()
-        logger.info(f"Embedding dim: {self.dim}")
+        self.model_name = model_name
+        self.model = None
+        self.dim = 384  # known for all-MiniLM-L6-v2
+        logger.info(f"Embedder initialized (lazy): {model_name}, dim={self.dim}")
+
+    def _load_model(self):
+        if self.model is None:
+            logger.info(f"Loading embedding model: {self.model_name}")
+            from sentence_transformers import SentenceTransformer
+            self.model = SentenceTransformer(self.model_name)
+            logger.info("Model loaded.")
 
     def embed(self, texts: list[str], batch_size: int = 64, normalize: bool = True) -> np.ndarray:
         """
         Embed a list of texts.
         normalize=True → cosine similarity == dot product (faster at retrieval time).
         """
+        self._load_model()
         logger.info(f"Embedding {len(texts)} texts (batch={batch_size})…")
         embeddings = self.model.encode(
             texts,
@@ -42,6 +49,7 @@ class Embedder:
 
     def embed_query(self, query: str, normalize: bool = True) -> np.ndarray:
         """Embed a single query string."""
+        self._load_model()
         vec = self.model.encode([query], normalize_embeddings=normalize, convert_to_numpy=True)
         return vec.astype(np.float32)
 
