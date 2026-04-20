@@ -105,6 +105,7 @@ html, body, [class*="css"] { font-family: 'Space Grotesk', sans-serif; }
 # ── singleton pipeline ───────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def get_pipeline():
+    from pipeline.rag_pipeline import RAGPipeline
     return RAGPipeline(top_k=5, template="balanced")
 
 
