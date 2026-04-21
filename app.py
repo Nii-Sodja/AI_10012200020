@@ -206,32 +206,36 @@ with tabs[0]:
             with st.spinner("🔍 Retrieving context & generating response…"):
                 result = pipe.query(user_input, template=template, fast_mode=fast_mode)
 
-            response = result.get("response", "No response generated.")
-            st.markdown(f'<div class="response-box">{response}</div>', unsafe_allow_html=True)
+            if result.get("error"):
+                st.error(f"Pipeline error: {result['error']}")
+                response = result.get("response", "")
+            else:
+                response = result.get("response", "No response generated.")
+                st.markdown(f'<div class="response-box">{response}</div>', unsafe_allow_html=True)
 
-            # metadata expander
-            with st.expander(f"📎 Pipeline details — {result.get('latency_s', '?')}s"):
-                r_stage = result["stages"].get("retrieval", {})
-                e_stage = result["stages"].get("embedding", {})
-                m_stage = result["stages"].get("memory", {})
+                # metadata expander
+                with st.expander(f"📎 Pipeline details — {result.get('latency_s', '?')}s"):
+                    r_stage = result["stages"].get("retrieval", {})
+                    e_stage = result["stages"].get("embedding", {})
+                    m_stage = result["stages"].get("memory", {})
 
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Chunks retrieved", r_stage.get("retrieved", 0))
-                c2.metric("Filtered out",     r_stage.get("filtered_out", 0))
-                c3.metric("Memory injected",  m_stage.get("memory_chunks_injected", 0))
-                c4.metric("Latency",          f"{result.get('latency_s', '?')}s")
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Chunks retrieved", r_stage.get("retrieved", 0))
+                    c2.metric("Filtered out",     r_stage.get("filtered_out", 0))
+                    c3.metric("Memory injected",  m_stage.get("memory_chunks_injected", 0))
+                    c4.metric("Latency",          f"{result.get('latency_s', '?')}s")
 
-                st.markdown("**Retrieved Chunks:**")
-                for ch in r_stage.get("chunks", []):
-                    src   = ch.get("source", "?")
-                    score = ch.get("score", 0)
-                    text  = ch.get("text", "")[:250]
-                    method = ch.get("method", "hybrid")
-                    st.markdown(
-                        f'<div class="chunk-card"><span class="score-badge">score={score:.3f} | {method}</span>'
-                        f'<br><b>{src}</b><br>{text}…</div>',
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown("**Retrieved Chunks:**")
+                    for ch in r_stage.get("chunks", []):
+                        src   = ch.get("source", "?")
+                        score = ch.get("score", 0)
+                        text  = ch.get("text", "")[:250]
+                        method = ch.get("method", "hybrid")
+                        st.markdown(
+                            f'<div class="chunk-card"><span class="score-badge">score={score:.3f} | {method}</span>'
+                            f'<br><b>{src}</b><br>{text}…</div>',
+                            unsafe_allow_html=True,
+                        )
 
         st.session_state.history.append({"query": user_input, "response": response})
 

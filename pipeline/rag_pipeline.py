@@ -5,7 +5,7 @@ Student: [Your Name] | Index: [Your Index Number]
 Pipeline: User Query → Query Expansion → Retrieval → Context Selection → Prompt → LLM → Response
 Includes: stage-by-stage logging, memory (Part G innovation), adversarial mode.
 """
-import os, sys, json, logging, time
+import os, sys, json, logging, time, gc
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -83,6 +83,8 @@ class RAGPipeline:
 
                 _cb("Building FAISS + BM25 index…")
                 self.store.build(embeddings, texts, sources)
+                del embeddings, texts, sources
+                gc.collect()
 
             api_key = os.getenv("GROQ_API_KEY", "")
             if api_key and api_key != "your_groq_api_key_here":
@@ -115,75 +117,87 @@ class RAGPipeline:
         if not self._ready:
             return {"error": "Pipeline not initialised. Call initialise() first."}
 
-        t_start = time.time()
-        tmpl = template or self.template
-        if adversarial_mode:
-            tmpl = "adversarial"
-
         result = {
             "query":         user_query,
-            "template":      tmpl,
+            "template":      template or self.template,
             "timestamp":     datetime.utcnow().isoformat(),
             "stages":        {},
         }
 
-        # ── Stage 1: Query Embedding ────────────────────────────────
-        logger.info(f"[S1] Embedding query: '{user_query}'")
-        query_vec = self.embedder.embed_query(user_query)
-        result["stages"]["embedding"] = {
-            "vector_shape": list(query_vec.shape),
-            "vector_norm":  float((query_vec ** 2).sum() ** 0.5),
-        }
+        try:
+            t_start = time.time()
+            tmpl = template or self.template
+            if adversarial_mode:
+                tmpl = "adversarial"
 
-        # ── Stage 2: Retrieval ──────────────────────────────────────
-        logger.info("[S2] Retrieving documents…")
-        retrieve_k = max(1, self.top_k - 1) if fast_mode else self.top_k
-        retrieval_result = self.store.retrieve(user_query, query_vec, k=retrieve_k)
-        retrieved = retrieval_result["results"]
-        result["stages"]["retrieval"] = {
-            "total_in_index":  self.store.index.ntotal,
-            "retrieved":       len(retrieved),
-            "filtered_out":    len(retrieval_result["filtered_out"]),
-            "chunks":          retrieved,
-        }
-        logger.info(f"[S2] Retrieved {len(retrieved)} chunks.")
+            # ── Stage 1: Query Embedding ────────────────────────────────
+            logger.info(f"[S1] Embedding query: '{user_query}'")
+            query_vec = self.embedder.embed_query(user_query)
+            result["stages"]["embedding"] = {
+                "vector_shape": list(query_vec.shape),
+                "vector_norm":  float((query_vec ** 2).sum() ** 0.5),
+            }
 
-        # ── Stage 3: Memory injection (Part G) ─────────────────────
-        memory_chunks = self._get_memory_chunks()
-        all_chunks = memory_chunks + retrieved
-        result["stages"]["memory"] = {
-            "memory_chunks_injected": len(memory_chunks),
-            "memory_summary": [m["text"][:80] for m in memory_chunks],
-        }
+            # ── Stage 2: Retrieval ──────────────────────────────────────
+            logger.info("[S2] Retrieving documents…")
+            retrieve_k = max(1, self.top_k - 1) if fast_mode else self.top_k
+            retrieval_result = self.store.retrieve(user_query, query_vec, k=retrieve_k)
+            retrieved = retrieval_result["results"]
+            result["stages"]["retrieval"] = {
+                "total_in_index":  self.store.index.ntotal,
+                "retrieved":       len(retrieved),
+                "filtered_out":    len(retrieval_result["filtered_out"]),
+                "chunks":          retrieved,
+            }
+            logger.info(f"[S2] Retrieved {len(retrieved)} chunks.")
 
-        # ── Stage 4: Prompt Construction ───────────────────────────
-        logger.info("[S3] Building prompt…")
-        max_chars = 3200 if fast_mode else 6000
-        prompt, used_chunks, context_str = construct_prompt(user_query, all_chunks, tmpl, max_chars=max_chars)
-        result["stages"]["prompt"] = {
-            "template":      tmpl,
-            "prompt_length": len(prompt),
-            "chunks_used":   len(used_chunks),
-            "final_prompt":  prompt,
-            "fast_mode":     fast_mode,
-        }
-        logger.info(f"[S3] Prompt ready: {len(prompt)} chars.")
+            # ── Stage 3: Memory injection (Part G) ─────────────────────
+            memory_chunks = self._get_memory_chunks()
+            all_chunks = memory_chunks + retrieved
+            result["stages"]["memory"] = {
+                "memory_chunks_injected": len(memory_chunks),
+                "memory_summary": [m["text"][:80] for m in memory_chunks],
+            }
 
-        # ── Stage 5: LLM Generation ─────────────────────────────────
-        logger.info("[S4] Calling LLM…")
-        response_text = self._call_llm(prompt, fast_mode=fast_mode)
-        result["stages"]["generation"] = {
-            "response_length": len(response_text),
-        }
-        result["response"] = response_text
-        result["latency_s"] = round(time.time() - t_start, 2)
-        logger.info(f"[S4] Response received ({len(response_text)} chars, {result['latency_s']}s).")
+            # ── Stage 4: Prompt Construction ───────────────────────────
+            logger.info("[S3] Building prompt…")
+            max_chars = 3200 if fast_mode else 6000
+            prompt, used_chunks, context_str = construct_prompt(user_query, all_chunks, tmpl, max_chars=max_chars)
+            result["stages"]["prompt"] = {
+                "template":      tmpl,
+                "prompt_length": len(prompt),
+                "chunks_used":   len(used_chunks),
+                "final_prompt":  prompt,
+                "fast_mode":     fast_mode,
+            }
+            logger.info(f"[S3] Prompt ready: {len(prompt)} chars.")
 
-        # ── Stage 6: Save to memory & log ──────────────────────────
-        self._update_memory(user_query, response_text, retrieved)
-        self._write_log(result)
+            # ── Stage 5: LLM Generation ─────────────────────────────────
+            logger.info("[S4] Calling LLM…")
+            response_text = self._call_llm(prompt, fast_mode=fast_mode)
+            result["stages"]["generation"] = {
+                "response_length": len(response_text),
+            }
+            result["response"] = response_text
+            result["latency_s"] = round(time.time() - t_start, 2)
+            logger.info(f"[S4] Response received ({len(response_text)} chars, {result['latency_s']}s).")
 
-        return result
+            # ── Stage 6: Save to memory & log ──────────────────────────
+            self._update_memory(user_query, response_text, retrieved)
+            self._write_log(result)
+
+            return result
+        except Exception as e:
+            logger.exception("Query failed")
+            error_result = {
+                "query": user_query,
+                "template": template or self.template,
+                "timestamp": datetime.utcnow().isoformat(),
+                "error": str(e),
+                "stages": result.get("stages", {}),
+            }
+            self._write_log(error_result)
+            return error_result
 
     # ── pure LLM (no retrieval) for Part E comparison ───────────────
 
@@ -205,10 +219,45 @@ class RAGPipeline:
                 temperature=0.2,
                 top_p=0.95,
             )
-            return response.choices[0].message.content
+            try:
+                return response.choices[0].message.content
+            except Exception:
+                return str(response)
         except Exception as e:
-            logger.error(f"LLM call failed: {e}")
-            return f"[LLM Error: {e}]"
+            logger.warning(f"Groq SDK call failed: {e}")
+            try:
+                return self._call_llm_direct(prompt, fast_mode=fast_mode)
+            except Exception as direct_err:
+                logger.error(f"Direct Groq HTTP fallback failed: {direct_err}")
+                return f"[LLM Error: {direct_err}]"
+
+    def _call_llm_direct(self, prompt: str, fast_mode: bool = False) -> str:
+        api_key = os.getenv("GROQ_API_KEY", "")
+        if not api_key or api_key == "your_groq_api_key_here":
+            raise RuntimeError("Missing GROQ_API_KEY for direct chat completion call.")
+
+        url = "https://api.groq.com/v1/chat/completions"
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 256 if fast_mode else 512,
+            "temperature": 0.2,
+            "top_p": 0.95,
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+
+        if "choices" not in data or not data["choices"]:
+            raise RuntimeError(f"Unexpected Groq response: {data}")
+
+        return data["choices"][0]["message"]["content"]
 
     def _mock_response(self, prompt: str) -> str:
         """Fallback when no API key is set — useful for UI testing."""

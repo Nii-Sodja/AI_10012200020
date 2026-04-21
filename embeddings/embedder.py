@@ -5,7 +5,12 @@ Student: [Your Name] | Index: [Your Index Number]
 Uses sentence-transformers (all-MiniLM-L6-v2) locally — no OpenAI calls needed.
 Embeddings are cached to disk to avoid recomputing on every run.
 """
-import os, json, logging, numpy as np
+import os, json, logging, gc, numpy as np
+
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +33,20 @@ class Embedder:
         if self.model is None:
             logger.info(f"Loading embedding model: {self.model_name}")
             from sentence_transformers import SentenceTransformer
-            self.model = SentenceTransformer(self.model_name)
+            try:
+                import torch
+                torch.set_num_threads(1)
+                torch.set_num_interop_threads(1)
+            except Exception:
+                pass
+            self.model = SentenceTransformer(self.model_name, device="cpu")
             logger.info("Model loaded.")
+
+    def _unload_model(self):
+        if self.model is not None:
+            logger.info("Unloading embedding model to free memory.")
+            self.model = None
+            gc.collect()
 
     def embed(self, texts: list[str], batch_size: int = 64, normalize: bool = True) -> np.ndarray:
         """
@@ -45,13 +62,17 @@ class Embedder:
             convert_to_numpy=True,
             normalize_embeddings=normalize,
         )
-        return embeddings.astype(np.float32)
+        result = embeddings.astype(np.float32)
+        self._unload_model()
+        return result
 
     def embed_query(self, query: str, normalize: bool = True) -> np.ndarray:
         """Embed a single query string."""
         self._load_model()
         vec = self.model.encode([query], normalize_embeddings=normalize, convert_to_numpy=True)
-        return vec.astype(np.float32)
+        result = vec.astype(np.float32)
+        self._unload_model()
+        return result
 
     # ── cache helpers ──────────────────────────────────────────────
 
